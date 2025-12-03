@@ -1,10 +1,11 @@
 # Publish to PyPI
 #
 # Runs daily to check for new LLVM versions and automatically publish.
+# Checks all major.minor versions >= 16 and publishes the latest patch for each.
 #
 # Manual trigger:
 #   1. Go to Actions → Publish to PyPI → Run workflow
-#   2. Optionally enter a specific LLVM version (e.g., for legacy releases)
+#   2. Optionally enter LLVM versions (comma-separated, e.g., "18.1.0,19.1.0,20.1.0")
 #   3. Click "Run workflow"
 
 name: Publish to PyPI
@@ -12,57 +13,73 @@ name: Publish to PyPI
 on:
   workflow_dispatch:
     inputs:
-      llvm_version:
-        description: 'LLVM version to release (leave empty for latest)'
+      llvm_versions:
+        description: 'LLVM versions to release, comma-separated (leave empty for latest)'
         required: false
         type: string
   schedule:
     - cron: '0 10 * * *'
 
 jobs:
+  determine-versions:
+    runs-on: ubuntu-latest
+    outputs:
+      versions: ${{ steps.set-versions.outputs.versions }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Determine versions to publish
+        id: set-versions
+        run: |
+          if [ -n "${{ inputs.llvm_versions }}" ]; then
+            # Convert comma-separated input to JSON array
+            versions=$(echo "${{ inputs.llvm_versions }}" | tr ',' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | jq -R . | jq -s -c .)
+            echo "Using manually specified versions: $versions"
+          else
+            # Get latest patch version for each major.minor >= 16
+            versions=$(git -c 'versionsort.suffix=-' \
+              ls-remote --exit-code --refs --sort='version:refname' --tags https://github.com/llvm/llvm-project 'llvmorg-*.*.*' \
+              | sed 's/.*llvmorg-//' \
+              | awk -F. '$1 >= 16' \
+              | sort -t. -k1,1n -k2,2n -k3,3n \
+              | awk -F. '{key=$1"."$2; versions[key]=$0} END {for (k in versions) print versions[k]}' \
+              | sort -t. -k1,1n -k2,2n \
+              | jq -R . | jq -s -c .)
+            echo "Detected LLVM versions (latest patch per major.minor): $versions"
+          fi
+          echo "versions=$versions" >> $GITHUB_OUTPUT
+
   publish:
+    needs: determine-versions
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
       contents: write
       id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        version: ${{ fromJson(needs.determine-versions.outputs.versions) }}
 
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Determine target version
-        id: version
+      - name: Check if version already published
+        id: check
         run: |
-          current_version="$(grep -Po '(?<=LLVM_VERSION )\d+(\.\d+)+' llvm_version.cmake)"
-          echo "current_version=$current_version" >> $GITHUB_OUTPUT
-
-          if [ -n "${{ inputs.llvm_version }}" ]; then
-            target_version="${{ inputs.llvm_version }}"
-            echo "Using manually specified version: $target_version"
+          if git rev-parse "v${{ matrix.version }}" >/dev/null 2>&1; then
+            echo "Tag v${{ matrix.version }} already exists, skipping"
+            echo "skip=true" >> $GITHUB_OUTPUT
           else
-            target_version=$(git -c 'versionsort.suffix=-' \
-              ls-remote --exit-code --refs --sort='version:refname' --tags https://github.com/llvm/llvm-project 'llvmorg-*.*.*' \
-              | grep -Po '\d+\.\d+(\.\d+)?$' \
-              | tail --lines=1)
-            echo "Detected latest LLVM version: $target_version"
-          fi
-
-          echo "target_version=$target_version" >> $GITHUB_OUTPUT
-
-          if [ "$current_version" = "$target_version" ]; then
-            echo "Version unchanged, nothing to do"
-            echo "changed=false" >> $GITHUB_OUTPUT
-          else
-            echo "Version changed: $current_version -> $target_version"
-            echo "changed=true" >> $GITHUB_OUTPUT
+            echo "skip=false" >> $GITHUB_OUTPUT
           fi
 
       - name: Update llvm_version.cmake
-        if: steps.version.outputs.changed == 'true'
+        if: steps.check.outputs.skip != 'true'
         run: |
-          version="${{ steps.version.outputs.target_version }}"
+          version="${{ matrix.version }}"
           curl -L "https://github.com/llvm/llvm-project/releases/download/llvmorg-${version}/clang-${version}.src.tar.xz" -o "clang-${version}.src.tar.xz"
           hash=$(sha256sum "clang-${version}.src.tar.xz" | cut -d ' ' -f1)
           rm -f "clang-${version}.src.tar.xz"
@@ -73,9 +90,9 @@ jobs:
           cat llvm_version.cmake
 
       - name: Commit and tag
-        if: steps.version.outputs.changed == 'true'
+        if: steps.check.outputs.skip != 'true'
         run: |
-          version="${{ steps.version.outputs.target_version }}"
+          version="${{ matrix.version }}"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add llvm_version.cmake
@@ -84,25 +101,25 @@ jobs:
           git push origin HEAD:master --tags
 
       - name: Install uv
-        if: steps.version.outputs.changed == 'true'
+        if: steps.check.outputs.skip != 'true'
         uses: astral-sh/setup-uv@v4
 
       - name: Build wheel
-        if: steps.version.outputs.changed == 'true'
+        if: steps.check.outputs.skip != 'true'
         run: uv build
 
       - name: Publish to PyPI
-        if: steps.version.outputs.changed == 'true'
+        if: steps.check.outputs.skip != 'true'
         uses: pypa/gh-action-pypi-publish@release/v1
 
       - name: Create GitHub Release
-        if: steps.version.outputs.changed == 'true'
+        if: steps.check.outputs.skip != 'true'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ steps.version.outputs.target_version }}
-          name: v${{ steps.version.outputs.target_version }}
+          tag_name: v${{ matrix.version }}
+          name: v${{ matrix.version }}
           body: |
-            LLVM ${{ steps.version.outputs.target_version }} Python bindings
+            LLVM ${{ matrix.version }} Python bindings
 
-            [LLVM Release Notes](https://releases.llvm.org/${{ steps.version.outputs.target_version }}/docs/ReleaseNotes.html)
+            [LLVM Release Notes](https://releases.llvm.org/${{ matrix.version }}/docs/ReleaseNotes.html)
           generate_release_notes: false
