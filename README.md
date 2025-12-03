@@ -1,38 +1,51 @@
-[![PyPI](https://img.shields.io/pypi/v/clang)](https://pypi.org/project/clang)
-![Python](https://img.shields.io/pypi/pyversions/clang)
-![Downloads](https://img.shields.io/pypi/dw/clang)
-[![License](https://img.shields.io/pypi/l/clang)](https://github.com/trolldbois/clang/blob/master/LICENSE.TXT)
+[![PyPI](https://img.shields.io/pypi/v/clang2)](https://pypi.org/project/clang2)
+![Python](https://img.shields.io/pypi/pyversions/clang2)
+![Downloads](https://img.shields.io/pypi/dw/clang2)
+[![License](https://img.shields.io/pypi/l/clang2)](https://github.com/elijahr/python-clang2/blob/master/LICENSE.TXT)
 
-# Clang Python package for PyPI
+# clang2
 
-This repository builds and releases the [clang package on pypi](https://pypi.org/project/clang/) .
+> **Fork Notice:** This is a fork of [trolldbois/python-clang](https://github.com/trolldbois/python-clang), actively maintained as of December 2025 by [elijahr](https://github.com/elijahr).
 
-The wheel is built from the LLVM libclang python binding source code directly. Thanks @nightlark for the 2025 refresh of the build process.
+libclang Python bindings, published to [PyPI as clang2](https://pypi.org/project/clang2/).
 
-This package does not contain binary files for the libclang library, only the python bindings.
+The wheel is built from the LLVM libclang Python binding source code directly. This package does not contain binary files for the libclang library, only the Python bindings.
 
+## Documentation
+
+- [Official libclang documentation](https://clang.llvm.org/docs/Tooling.html#libclang)
+- [Python bindings source](https://github.com/llvm/llvm-project/tree/main/clang/bindings/python)
 
 ## Installation
 
-You can install the package using pip:
+Install the package using pip:
 
 ```bash
-pip install clang
+pip install clang2
 ```
 
 Or for a specific version:
 
 ```bash
-pip install clang==20
+pip install clang2==20
 ```
 
 ## License
 
 This repository follows the [license agreement](https://github.com/llvm/llvm-project/blob/main/LICENSE.TXT) of the LLVM project, see Apache-2.0 WITH LLVM-exception.
 
-## Release SOP
+## Releases
 
-- GitHub Workflows will create new pull requests weekly when LLVM releases new major versions. You can always manually trigger the GitHub Actions.
-- Merge the PR created by GH Action.
-- Create a new release, with a new tag "v<version>". 
-- The creation of the tag will trigger a push, which will trigger the release/pypi upload workflow, through Trusted Publishing
+Releases are automated. When LLVM publishes a new version, this repository automatically:
+
+1. Detects the new version (checked daily)
+2. Updates the version file
+3. Builds the wheel
+4. Publishes to PyPI
+5. Creates a GitHub release
+
+To manually trigger a release (e.g., for a legacy LLVM version):
+
+1. Go to Actions → Publish to PyPI → Run workflow
+2. Optionally enter a specific LLVM version
+3. Click "Run workflow"

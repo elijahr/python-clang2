@@ -1,0 +1,99 @@
+name: Publish to PyPI
+
+on:
+  workflow_dispatch:
+    inputs:
+      llvm_version:
+        description: 'LLVM version to release (leave empty for latest)'
+        required: false
+        type: string
+  schedule:
+    - cron: '0 10 * * *'
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      contents: write
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine target version
+        id: version
+        run: |
+          current_version="$(grep -Po '(?<=LLVM_VERSION )\d+(\.\d+)+' llvm_version.cmake)"
+          echo "current_version=$current_version" >> $GITHUB_OUTPUT
+
+          if [ -n "${{ inputs.llvm_version }}" ]; then
+            target_version="${{ inputs.llvm_version }}"
+            echo "Using manually specified version: $target_version"
+          else
+            target_version=$(git -c 'versionsort.suffix=-' \
+              ls-remote --exit-code --refs --sort='version:refname' --tags https://github.com/llvm/llvm-project 'llvmorg-*.*.*' \
+              | grep -Po '\d+\.\d+(\.\d+)?$' \
+              | tail --lines=1)
+            echo "Detected latest LLVM version: $target_version"
+          fi
+
+          echo "target_version=$target_version" >> $GITHUB_OUTPUT
+
+          if [ "$current_version" = "$target_version" ]; then
+            echo "Version unchanged, nothing to do"
+            echo "changed=false" >> $GITHUB_OUTPUT
+          else
+            echo "Version changed: $current_version -> $target_version"
+            echo "changed=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Update llvm_version.cmake
+        if: steps.version.outputs.changed == 'true'
+        run: |
+          version="${{ steps.version.outputs.target_version }}"
+          curl -L "https://github.com/llvm/llvm-project/releases/download/llvmorg-${version}/clang-${version}.src.tar.xz" -o "clang-${version}.src.tar.xz"
+          hash=$(sha256sum "clang-${version}.src.tar.xz" | cut -d ' ' -f1)
+          rm -f "clang-${version}.src.tar.xz"
+
+          echo "set(LLVM_VERSION $version)" > llvm_version.cmake
+          echo "set(LLVM_SHA256 $hash)" >> llvm_version.cmake
+
+          cat llvm_version.cmake
+
+      - name: Commit and tag
+        if: steps.version.outputs.changed == 'true'
+        run: |
+          version="${{ steps.version.outputs.target_version }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add llvm_version.cmake
+          git commit -m "Update LLVM to version $version"
+          git tag "v$version"
+          git push origin HEAD:master --tags
+
+      - name: Install uv
+        if: steps.version.outputs.changed == 'true'
+        uses: astral-sh/setup-uv@v4
+
+      - name: Build wheel
+        if: steps.version.outputs.changed == 'true'
+        run: uv build
+
+      - name: Publish to PyPI
+        if: steps.version.outputs.changed == 'true'
+        uses: pypa/gh-action-pypi-publish@release/v1
+
+      - name: Create GitHub Release
+        if: steps.version.outputs.changed == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.target_version }}
+          name: v${{ steps.version.outputs.target_version }}
+          body: |
+            LLVM ${{ steps.version.outputs.target_version }} Python bindings
+
+            [LLVM Release Notes](https://releases.llvm.org/${{ steps.version.outputs.target_version }}/docs/ReleaseNotes.html)
+          generate_release_notes: false

@@ -3,12 +3,16 @@ requires = ["scikit-build-core"]
 build-backend = "scikit_build_core.build"
 
 [project]
-name = "clang"
+name = "clang2"
 description = "libclang python bindings"
 readme = "README.md"
 license = { text = "Apache-2.0 with LLVM exception" }
 authors = [
-    { name = "LLVM team - pypi upload by Loic Jaquemet" }
+    { name = "LLVM team" },
+    { name = "elijahr", email = "elijahr+clang@gmail.com" }
+]
+maintainers = [
+    { name = "elijahr", email = "elijahr+clang@gmail.com" }
 ]
 keywords = ["llvm", "clang", "libclang"]
 classifiers = [
@@ -17,15 +21,21 @@ classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Topic :: Software Development :: Compilers",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
 ]
+requires-python = ">=3.9"
 dynamic = ["version"]
 
 [project.urls]
-Homepage = "http://clang.llvm.org/"
-Download = "http://llvm.org/releases/download.html"
-
-[dependecy-groups]
-dev = ["build", "twine"]
+Homepage = "https://github.com/elijahr/python-clang2"
+Repository = "https://github.com/elijahr/python-clang2"
+Documentation = "https://clang.llvm.org/docs/Tooling.html#libclang"
+Changelog = "https://releases.llvm.org/"
+"Bug Tracker" = "https://github.com/elijahr/python-clang2/issues"
 
 [tool.scikit-build]
 wheel.py-api = "py3"
