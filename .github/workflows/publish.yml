@@ -110,6 +110,8 @@ jobs:
           done
 
       - name: Create GitHub Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           for version in ${{ steps.versions.outputs.versions }}; do
             # Only create release if we have the tag locally (meaning we created it)
@@ -123,10 +125,6 @@ jobs:
               echo "Creating GitHub release for v$version"
               gh release create "v$version" \
                 --title "v$version" \
-                --notes "LLVM $version Python bindings
-
-[LLVM Release Notes](https://releases.llvm.org/$version/docs/ReleaseNotes.html)"
+                --notes $'LLVM '"$version"$' Python bindings\n\n[LLVM Release Notes](https://releases.llvm.org/'"$version"$'/docs/ReleaseNotes.html)'
             fi
           done
-        env:
-          GH_TOKEN: ${{ github.token }}
