@@ -21,19 +21,24 @@ on:
     - cron: '0 10 * * *'
 
 jobs:
-  determine-versions:
+  publish:
     runs-on: ubuntu-latest
-    outputs:
-      versions: ${{ steps.set-versions.outputs.versions }}
+    environment: pypi
+    permissions:
+      contents: write
+      id-token: write
+
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Determine versions to publish
-        id: set-versions
+        id: versions
         run: |
           if [ -n "${{ inputs.llvm_versions }}" ]; then
-            # Convert comma-separated input to JSON array
-            versions=$(echo "${{ inputs.llvm_versions }}" | tr ',' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | jq -R . | jq -s -c .)
+            # Convert comma-separated input to space-separated
+            versions=$(echo "${{ inputs.llvm_versions }}" | tr ',' ' ' | xargs)
             echo "Using manually specified versions: $versions"
           else
             # Get latest patch version for each major.minor >= 16
@@ -44,82 +49,84 @@ jobs:
               | sort -t. -k1,1n -k2,2n -k3,3n \
               | awk -F. '{key=$1"."$2; versions[key]=$0} END {for (k in versions) print versions[k]}' \
               | sort -t. -k1,1n -k2,2n \
-              | jq -R . | jq -s -c .)
+              | tr '\n' ' ')
             echo "Detected LLVM versions (latest patch per major.minor): $versions"
           fi
           echo "versions=$versions" >> $GITHUB_OUTPUT
 
-  publish:
-    needs: determine-versions
-    runs-on: ubuntu-latest
-    environment: pypi
-    permissions:
-      contents: write
-      id-token: write
-    strategy:
-      fail-fast: false
-      matrix:
-        version: ${{ fromJson(needs.determine-versions.outputs.versions) }}
-
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Check if version already published
-        id: check
-        run: |
-          if git rev-parse "v${{ matrix.version }}" >/dev/null 2>&1; then
-            echo "Tag v${{ matrix.version }} already exists, skipping"
-            echo "skip=true" >> $GITHUB_OUTPUT
-          else
-            echo "skip=false" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Update llvm_version.cmake
-        if: steps.check.outputs.skip != 'true'
-        run: |
-          version="${{ matrix.version }}"
-          curl -L "https://github.com/llvm/llvm-project/releases/download/llvmorg-${version}/clang-${version}.src.tar.xz" -o "clang-${version}.src.tar.xz"
-          hash=$(sha256sum "clang-${version}.src.tar.xz" | cut -d ' ' -f1)
-          rm -f "clang-${version}.src.tar.xz"
-
-          echo "set(LLVM_VERSION $version)" > llvm_version.cmake
-          echo "set(LLVM_SHA256 $hash)" >> llvm_version.cmake
-
-          cat llvm_version.cmake
-
-      - name: Commit and tag
-        if: steps.check.outputs.skip != 'true'
-        run: |
-          version="${{ matrix.version }}"
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add llvm_version.cmake
-          git commit -m "Update LLVM to version $version"
-          git tag "v$version"
-          git push origin HEAD:master --tags
-
       - name: Install uv
-        if: steps.check.outputs.skip != 'true'
         uses: astral-sh/setup-uv@v4
 
-      - name: Build wheel
-        if: steps.check.outputs.skip != 'true'
-        run: uv build
+      - name: Publish each version sequentially
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-      - name: Publish to PyPI
-        if: steps.check.outputs.skip != 'true'
-        uses: pypa/gh-action-pypi-publish@release/v1
+          for version in ${{ steps.versions.outputs.versions }}; do
+            echo "::group::Processing LLVM $version"
 
-      - name: Create GitHub Release
-        if: steps.check.outputs.skip != 'true'
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: v${{ matrix.version }}
-          name: v${{ matrix.version }}
-          body: |
-            LLVM ${{ matrix.version }} Python bindings
+            # Fetch latest to check for existing tags and get any new commits
+            git fetch origin --tags
 
-            [LLVM Release Notes](https://releases.llvm.org/${{ matrix.version }}/docs/ReleaseNotes.html)
-          generate_release_notes: false
+            # Check if tag already exists
+            if git rev-parse "v$version" >/dev/null 2>&1; then
+              echo "Tag v$version already exists, skipping"
+              echo "::endgroup::"
+              continue
+            fi
+
+            # Pull latest changes (from previous iterations or other sources)
+            git pull --rebase origin master
+
+            # Download and compute hash
+            echo "Downloading clang-${version}.src.tar.xz..."
+            curl -fSL "https://github.com/llvm/llvm-project/releases/download/llvmorg-${version}/clang-${version}.src.tar.xz" -o "clang-${version}.src.tar.xz"
+            hash=$(sha256sum "clang-${version}.src.tar.xz" | cut -d ' ' -f1)
+            rm -f "clang-${version}.src.tar.xz"
+
+            # Update version file
+            echo "set(LLVM_VERSION $version)" > llvm_version.cmake
+            echo "set(LLVM_SHA256 $hash)" >> llvm_version.cmake
+            cat llvm_version.cmake
+
+            # Commit and tag
+            git add llvm_version.cmake
+            git commit -m "Update LLVM to version $version"
+            git tag "v$version"
+            git push origin HEAD:master --tags
+
+            # Build
+            echo "Building wheel..."
+            uv build
+
+            # Publish to PyPI
+            echo "Publishing to PyPI..."
+            uv publish --trusted-publishing always
+
+            # Clean dist for next iteration
+            rm -rf dist/
+
+            echo "::endgroup::"
+          done
+
+      - name: Create GitHub Releases
+        run: |
+          for version in ${{ steps.versions.outputs.versions }}; do
+            # Only create release if we have the tag locally (meaning we created it)
+            if git rev-parse "v$version" >/dev/null 2>&1; then
+              # Check if release already exists
+              if gh release view "v$version" >/dev/null 2>&1; then
+                echo "Release v$version already exists, skipping"
+                continue
+              fi
+
+              echo "Creating GitHub release for v$version"
+              gh release create "v$version" \
+                --title "v$version" \
+                --notes "LLVM $version Python bindings
+
+[LLVM Release Notes](https://releases.llvm.org/$version/docs/ReleaseNotes.html)"
+            fi
+          done
+        env:
+          GH_TOKEN: ${{ github.token }}
