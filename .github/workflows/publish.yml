@@ -64,9 +64,12 @@ jobs:
         uses: astral-sh/setup-uv@v4
 
       - name: Publish each version sequentially
+        id: publish
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          failed_versions=""
 
           for version in ${{ steps.versions.outputs.versions }}; do
             echo "::group::Processing LLVM $version"
@@ -86,41 +89,61 @@ jobs:
               tag_exists=true
             fi
 
-            # Pull latest changes (from previous iterations or other sources)
-            git pull --rebase origin master
+            # Wrap in a subshell to catch errors but continue processing
+            if ! (
+              set -e
 
-            # Download and compute hash
-            echo "Downloading clang-${version}.src.tar.xz..."
-            curl -fSL "https://github.com/llvm/llvm-project/releases/download/llvmorg-${version}/clang-${version}.src.tar.xz" -o "clang-${version}.src.tar.xz"
-            hash=$(sha256sum "clang-${version}.src.tar.xz" | cut -d ' ' -f1)
-            rm -f "clang-${version}.src.tar.xz"
+              # Pull latest changes (from previous iterations or other sources)
+              git pull --rebase origin master
 
-            # Update version file
-            echo "set(LLVM_VERSION $version)" > llvm_version.cmake
-            echo "set(LLVM_SHA256 $hash)" >> llvm_version.cmake
-            cat llvm_version.cmake
+              # Download and compute hash
+              echo "Downloading clang-${version}.src.tar.xz..."
+              curl -fSL "https://github.com/llvm/llvm-project/releases/download/llvmorg-${version}/clang-${version}.src.tar.xz" -o "clang-${version}.src.tar.xz"
+              hash=$(sha256sum "clang-${version}.src.tar.xz" | cut -d ' ' -f1)
+              rm -f "clang-${version}.src.tar.xz"
 
-            # Commit and tag (skip if force and tag already exists)
-            if [ "$tag_exists" = "false" ]; then
-              git add llvm_version.cmake
-              git commit -m "Update LLVM to version $version"
-              git tag "v$version"
-              git push origin HEAD:master --tags
+              # Update version file
+              echo "set(LLVM_VERSION $version)" > llvm_version.cmake
+              echo "set(LLVM_SHA256 $hash)" >> llvm_version.cmake
+              cat llvm_version.cmake
+
+              # Commit and tag (skip if force and tag already exists)
+              if [ "$tag_exists" = "false" ]; then
+                git add llvm_version.cmake
+                git commit -m "Update LLVM to version $version"
+                git tag "v$version"
+                git push origin HEAD:master --tags
+              fi
+
+              # Build
+              echo "Building wheel..."
+              uv build
+
+              # Publish to PyPI
+              echo "Publishing to PyPI..."
+              uv publish --trusted-publishing always
+
+              # Clean dist for next iteration
+              rm -rf dist/
+            ); then
+              echo "::error::Failed to publish LLVM $version"
+              failed_versions="$failed_versions $version"
             fi
-
-            # Build
-            echo "Building wheel..."
-            uv build
-
-            # Publish to PyPI
-            echo "Publishing to PyPI..."
-            uv publish --trusted-publishing always
-
-            # Clean dist for next iteration
-            rm -rf dist/
 
             echo "::endgroup::"
           done
+
+          # Report failed versions
+          if [ -n "$failed_versions" ]; then
+            echo "failed_versions=$failed_versions" >> $GITHUB_OUTPUT
+            echo "::error::Failed to publish versions:$failed_versions"
+          fi
+
+      - name: Check for failures
+        if: steps.publish.outputs.failed_versions != ''
+        run: |
+          echo "The following versions failed to publish: ${{ steps.publish.outputs.failed_versions }}"
+          exit 1
 
       - name: Create GitHub Releases
         env:
