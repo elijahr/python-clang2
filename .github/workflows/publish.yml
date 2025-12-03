@@ -1,3 +1,12 @@
+# Publish to PyPI
+#
+# Runs daily to check for new LLVM versions and automatically publish.
+#
+# Manual trigger:
+#   1. Go to Actions → Publish to PyPI → Run workflow
+#   2. Optionally enter a specific LLVM version (e.g., for legacy releases)
+#   3. Click "Run workflow"
+
 name: Publish to PyPI
 
 on:

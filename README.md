@@ -5,7 +5,9 @@
 
 # clang2
 
-> **Fork Notice:** This is a fork of [trolldbois/python-clang](https://github.com/trolldbois/python-clang), actively maintained as of December 2025 by [elijahr](https://github.com/elijahr).
+> **Fork Notice:** This is a fork of [trolldbois/python-clang](https://github.com/trolldbois/python-clang).
+
+The original [`clang`](https://pypi.org/project/clang/) package on PyPI is not actively maintained—its latest release (20.1.5 as of December 2025) lags behind the current LLVM major version. This fork, `clang2`, tracks LLVM releases daily and publishes updates automatically.
 
 libclang Python bindings, published to [PyPI as clang2](https://pypi.org/project/clang2/).
 
@@ -36,16 +38,4 @@ This repository follows the [license agreement](https://github.com/llvm/llvm-pro
 
 ## Releases
 
-Releases are automated. When LLVM publishes a new version, this repository automatically:
-
-1. Detects the new version (checked daily)
-2. Updates the version file
-3. Builds the wheel
-4. Publishes to PyPI
-5. Creates a GitHub release
-
-To manually trigger a release (e.g., for a legacy LLVM version):
-
-1. Go to Actions → Publish to PyPI → Run workflow
-2. Optionally enter a specific LLVM version
-3. Click "Run workflow"
+Releases are automated. When LLVM publishes a new version, this repository automatically detects it (checked daily), builds the wheel, and publishes to PyPI.
