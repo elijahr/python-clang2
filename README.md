@@ -5,13 +5,13 @@
 
 # clang2
 
-> **Fork Notice:** This is a fork of [trolldbois/python-clang](https://github.com/trolldbois/python-clang).
+Python bindings for [libclang](https://clang.llvm.org/docs/Tooling.html#libclang). This package provides only the bindings—libclang must be installed separately.
 
-The original [`clang`](https://pypi.org/project/clang/) package on PyPI is not actively maintained—its latest release (20.1.5 as of December 2025) lags behind the current LLVM major version. This fork, `clang2`, tracks LLVM releases daily and publishes updates automatically.
+## Why clang2?
 
-libclang Python bindings, published to [PyPI as clang2](https://pypi.org/project/clang2/).
+The [`clang`](https://pypi.org/project/clang/) package on PyPI lags behind LLVM (v20 vs v21 as of December 2025). This fork tracks LLVM releases daily and publishes automatically.
 
-The wheel is built from the LLVM libclang Python binding source code directly. This package does not contain binary files for the libclang library, only the Python bindings.
+> Fork of [trolldbois/python-clang](https://github.com/trolldbois/python-clang).
 
 ## Documentation
 
@@ -19,8 +19,6 @@ The wheel is built from the LLVM libclang Python binding source code directly. T
 - [Python bindings source](https://github.com/llvm/llvm-project/tree/main/clang/bindings/python)
 
 ## Installation
-
-Install the package using pip:
 
 ```bash
 pip install clang2
@@ -34,8 +32,4 @@ pip install clang2==20
 
 ## License
 
-This repository follows the [license agreement](https://github.com/llvm/llvm-project/blob/main/LICENSE.TXT) of the LLVM project, see Apache-2.0 WITH LLVM-exception.
-
-## Releases
-
-Releases are automated. When LLVM publishes a new version, this repository automatically detects it (checked daily), builds the wheel, and publishes to PyPI.
+Apache-2.0 WITH LLVM-exception. See [LICENSE](https://github.com/llvm/llvm-project/blob/main/LICENSE.TXT).
