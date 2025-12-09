@@ -47,5 +47,12 @@ provider = "scikit_build_core.metadata.regex"
 input = "llvm_version.cmake"
 regex = '''(?sx)
 set\(\s*LLVM_VERSION\s+(?P<version>\d+(?:\.\d+)+)\s*\)
+.*?
+set\(\s*POST_RELEASE\s+(?P<post>\d+)\s*\)
 '''
-result = "{version}"
+result = "{version}.post{post}"
+
+# Fallback for POST_RELEASE=0 (no .post suffix needed)
+[[tool.scikit-build.metadata.version.substitutions]]
+match = "\\.post0$"
+replace = ""

@@ -1,0 +1,70 @@
+# Test Build (no publish)
+#
+# For local testing with `act`. Validates configuration without publishing.
+#
+# Usage:
+#   act -j test-version-detection --container-architecture linux/amd64
+
+name: Test Build
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test-version-detection:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Test version extraction from llvm_version.cmake
+        run: |
+          echo "=== llvm_version.cmake contents ==="
+          cat llvm_version.cmake
+
+          echo ""
+          echo "=== Extracting values ==="
+          LLVM_VERSION=$(grep -oP 'set\(\s*LLVM_VERSION\s+\K[0-9.]+' llvm_version.cmake)
+          LLVM_SHA256=$(grep -oP 'set\(\s*LLVM_SHA256\s+\K[a-f0-9]+' llvm_version.cmake)
+          POST_RELEASE=$(grep -oP 'set\(\s*POST_RELEASE\s+\K[0-9]+' llvm_version.cmake)
+
+          echo "LLVM_VERSION: $LLVM_VERSION"
+          echo "LLVM_SHA256: $LLVM_SHA256"
+          echo "POST_RELEASE: $POST_RELEASE"
+
+          if [ -z "$LLVM_VERSION" ]; then
+            echo "::error::Failed to extract LLVM_VERSION"
+            exit 1
+          fi
+
+          # Compute expected package version
+          if [ "$POST_RELEASE" = "0" ]; then
+            PACKAGE_VERSION="$LLVM_VERSION"
+          else
+            PACKAGE_VERSION="${LLVM_VERSION}.post${POST_RELEASE}"
+          fi
+          echo "Expected package version: $PACKAGE_VERSION"
+
+      - name: Validate pyproject.toml
+        run: |
+          echo "=== Checking pyproject.toml ==="
+          python3 -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb')))"
+
+          echo ""
+          echo "=== Package name ==="
+          python3 -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['name'])"
+
+      - name: Test clang tarball URL
+        run: |
+          LLVM_VERSION=$(grep -oP 'set\(\s*LLVM_VERSION\s+\K[0-9.]+' llvm_version.cmake)
+          URL="https://github.com/llvm/llvm-project/releases/download/llvmorg-${LLVM_VERSION}/clang-${LLVM_VERSION}.src.tar.xz"
+
+          echo "Testing URL: $URL"
+
+          # Just check headers, don't download
+          if curl -fsSL --head "$URL" > /dev/null 2>&1; then
+            echo "URL is valid and accessible"
+          else
+            echo "::error::URL not accessible: $URL"
+            exit 1
+          fi
+
