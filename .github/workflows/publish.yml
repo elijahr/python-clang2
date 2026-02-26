@@ -37,6 +37,7 @@ jobs:
     permissions:
       contents: write
       id-token: write
+      issues: write
 
     steps:
       - uses: actions/checkout@v4
@@ -78,6 +79,7 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
           failed_versions=""
+          failed_details=""
           published_versions=""
 
           for version in ${{ steps.versions.outputs.versions }}; do
@@ -131,6 +133,7 @@ jobs:
             if ! git pull --rebase origin master; then
               echo "::error::Failed to pull latest changes for $version"
               failed_versions="$failed_versions $version"
+              failed_details="${failed_details}\n- **${version}**: Failed to pull latest changes (git rebase conflict?)"
               echo "::endgroup::"
               continue
             fi
@@ -147,6 +150,7 @@ jobs:
             if ! curl -fSL "https://github.com/llvm/llvm-project/releases/download/llvmorg-${version}/${tarball}" -o "${tarball}"; then
               echo "::error::Failed to download LLVM $version"
               failed_versions="$failed_versions $version"
+              failed_details="${failed_details}\n- **${version}**: Failed to download \`${tarball}\` from GitHub releases"
               echo "::endgroup::"
               continue
             fi
@@ -171,6 +175,7 @@ jobs:
               if ! git push origin HEAD:master --tags; then
                 echo "::error::Failed to push tag for $version"
                 failed_versions="$failed_versions $version"
+                failed_details="${failed_details}\n- **${version}**: Failed to push git tag"
                 echo "::endgroup::"
                 continue
               fi
@@ -181,6 +186,7 @@ jobs:
             if ! uv build; then
               echo "::error::Failed to build wheel for $version"
               failed_versions="$failed_versions $version"
+              failed_details="${failed_details}\n- **${version}**: Failed to build wheel"
               version_failed=true
             fi
 
@@ -190,6 +196,7 @@ jobs:
               if ! uv publish --trusted-publishing always; then
                 echo "::error::Failed to publish $version to PyPI"
                 failed_versions="$failed_versions $version"
+                failed_details="${failed_details}\n- **${version}**: Failed to publish to PyPI"
                 version_failed=true
               fi
             fi
@@ -221,11 +228,34 @@ jobs:
 
           if [ -n "$failed_versions" ]; then
             echo "failed_versions=$failed_versions" >> $GITHUB_OUTPUT
+            # Use a delimiter for multiline output
+            {
+              echo "failed_details<<DETAILS_EOF"
+              echo -e "$failed_details"
+              echo "DETAILS_EOF"
+            } >> $GITHUB_OUTPUT
             echo "::error::Failed to publish versions:$failed_versions"
           fi
 
-      - name: Check for failures
+      - name: Open issue for failed versions
         if: always() && steps.publish.outputs.failed_versions != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FAILED_VERSIONS: ${{ steps.publish.outputs.failed_versions }}
+          FAILED_DETAILS: ${{ steps.publish.outputs.failed_details }}
         run: |
-          echo "The following versions failed to publish: ${{ steps.publish.outputs.failed_versions }}"
+          title="Publish failed for LLVM$FAILED_VERSIONS"
+
+          # Check for an existing open issue with the same title to avoid duplicates
+          existing=$(gh issue list --state open --search "$title" --json number,title --jq ".[] | select(.title == \"$title\") | .number")
+          if [ -n "$existing" ]; then
+            echo "Issue #$existing already open for these versions, skipping"
+          else
+            run_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            printf -v body "The automated publish workflow failed for the following LLVM versions:\n%b\n\n**Run:** %s\n\nTo retry, trigger the workflow manually with \`force: true\` or fix the underlying issue and wait for the next daily run." "$FAILED_DETAILS" "$run_url"
+
+            gh issue create --title "$title" --body "$body" --label "publish"
+          fi
+
+          # Fail the workflow
           exit 1
