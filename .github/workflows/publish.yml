@@ -55,6 +55,7 @@ jobs:
             versions=$(git -c 'versionsort.suffix=-' \
               ls-remote --exit-code --refs --sort='version:refname' --tags https://github.com/llvm/llvm-project 'llvmorg-*.*.*' \
               | sed 's/.*llvmorg-//' \
+              | grep -v '-' \
               | awk -F. '$1 >= 16' \
               | sort -t. -k1,1n -k2,2n -k3,3n \
               | awk -F. '{key=$1"."$2; versions[key]=$0} END {for (k in versions) print versions[k]}' \
