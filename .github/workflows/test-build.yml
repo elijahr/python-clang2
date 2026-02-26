@@ -56,7 +56,14 @@ jobs:
       - name: Test clang tarball URL
         run: |
           LLVM_VERSION=$(grep -oP 'set\(\s*LLVM_VERSION\s+\K[0-9.]+' llvm_version.cmake)
-          URL="https://github.com/llvm/llvm-project/releases/download/llvmorg-${LLVM_VERSION}/clang-${LLVM_VERSION}.src.tar.xz"
+          # LLVM 22+ ships a monorepo tarball instead of per-project tarballs
+          MAJOR_VERSION=$(echo "$LLVM_VERSION" | cut -d. -f1)
+          if [ "$MAJOR_VERSION" -ge 22 ]; then
+            TARBALL="llvm-project-${LLVM_VERSION}.src.tar.xz"
+          else
+            TARBALL="clang-${LLVM_VERSION}.src.tar.xz"
+          fi
+          URL="https://github.com/llvm/llvm-project/releases/download/llvmorg-${LLVM_VERSION}/${TARBALL}"
 
           echo "Testing URL: $URL"
 

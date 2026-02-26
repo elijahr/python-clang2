@@ -136,16 +136,23 @@ jobs:
             fi
 
             # Download and compute hash
-            echo "Downloading clang-${version}.src.tar.xz..."
-            if ! curl -fSL "https://github.com/llvm/llvm-project/releases/download/llvmorg-${version}/clang-${version}.src.tar.xz" -o "clang-${version}.src.tar.xz"; then
+            # LLVM 22+ ships a monorepo tarball instead of per-project tarballs
+            major_version=$(echo "$version" | cut -d. -f1)
+            if [ "$major_version" -ge 22 ]; then
+              tarball="llvm-project-${version}.src.tar.xz"
+            else
+              tarball="clang-${version}.src.tar.xz"
+            fi
+            echo "Downloading ${tarball}..."
+            if ! curl -fSL "https://github.com/llvm/llvm-project/releases/download/llvmorg-${version}/${tarball}" -o "${tarball}"; then
               echo "::error::Failed to download LLVM $version"
               failed_versions="$failed_versions $version"
               echo "::endgroup::"
               continue
             fi
 
-            hash=$(sha256sum "clang-${version}.src.tar.xz" | cut -d ' ' -f1)
-            rm -f "clang-${version}.src.tar.xz"
+            hash=$(sha256sum "${tarball}" | cut -d ' ' -f1)
+            rm -f "${tarball}"
 
             # Update version file with post_release
             {
