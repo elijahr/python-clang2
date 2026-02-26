@@ -1,4 +1,4 @@
 # libclang Python bindings version configuration
-set(LLVM_VERSION 21.1.8)
-set(LLVM_SHA256 6090e3f23720d003cdd84483a47d0eec6d01adbb5e0c714ac0c8b58de546aa62)
+set(LLVM_VERSION 22.1.0)
+set(LLVM_SHA256 25d2e2adc4356d758405dd885fcfd6447bce82a90eb78b6b87ce0934bd077173)
 set(POST_RELEASE 0)
